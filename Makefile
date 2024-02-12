@@ -5,12 +5,12 @@ run:
 .PHONY: proto
 proto:
 	@protoc \
-		--go_out=broker \
+		--go_out=. \
 		--go_opt=paths=source_relative \
-		--go-grpc_out=broker \
+		--go-grpc_out=. \
 		--go-grpc_opt=paths=source_relative \
-		broker.proto
+		proto/broker.proto
 
 .PHONY: check
 check:
-	@grpcurl --plaintext -d '{"data": "YmxhYWE="}' localhost:3030 broker.Broker.Publish
+	@grpcurl --plaintext -d '{"data": "YmxhYWE=", "producer": {"name": "prod"}}' localhost:3030 broker.Broker.Publish

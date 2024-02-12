@@ -1,0 +1,34 @@
+syntax = "proto3";
+package broker;
+
+option go_package = "github.com/tomasmota/go-grpc-broker/proto";
+
+import "google/protobuf/empty.proto";
+
+message Producer {
+  string name = 1;
+}
+
+message Consumer {
+  string name = 1;
+}
+
+message PublishRequest {
+  optional Producer producer = 1; 
+  bytes data = 2;
+}
+
+message SubscribeRequest {
+  Consumer consumer = 1; 
+}
+
+message Message {
+  bytes data = 1; 
+}
+
+
+service Broker {
+    rpc Publish(PublishRequest) returns (google.protobuf.Empty);
+    // rpc Subscribe(SubscribeRequest) returns (stream Message);
+    rpc Subscribe(SubscribeRequest) returns (google.protobuf.Empty);
+}
