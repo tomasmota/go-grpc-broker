@@ -1,6 +1,6 @@
 module github.com/tomasmota/go-grpc-broker
 
-go 1.22
+go 1.21
 
 require (
 	github.com/google/uuid v1.4.0

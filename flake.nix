@@ -24,7 +24,7 @@
 
         devShell = pkgs.mkShellNoCC {
           packages = with pkgs; [
-            go_1_22
+            go_1_21
             gopls
             golangci-lint
             protobuf
