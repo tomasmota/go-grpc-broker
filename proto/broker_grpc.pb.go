@@ -29,8 +29,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type BrokerClient interface {
 	Publish(ctx context.Context, in *PublishRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
-	// rpc Subscribe(SubscribeRequest) returns (stream Message);
-	Subscribe(ctx context.Context, in *SubscribeRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	Subscribe(ctx context.Context, in *SubscribeRequest, opts ...grpc.CallOption) (Broker_SubscribeClient, error)
 }
 
 type brokerClient struct {
@@ -50,13 +49,36 @@ func (c *brokerClient) Publish(ctx context.Context, in *PublishRequest, opts ...
 	return out, nil
 }
 
-func (c *brokerClient) Subscribe(ctx context.Context, in *SubscribeRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
-	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, Broker_Subscribe_FullMethodName, in, out, opts...)
+func (c *brokerClient) Subscribe(ctx context.Context, in *SubscribeRequest, opts ...grpc.CallOption) (Broker_SubscribeClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Broker_ServiceDesc.Streams[0], Broker_Subscribe_FullMethodName, opts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &brokerSubscribeClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Broker_SubscribeClient interface {
+	Recv() (*Message, error)
+	grpc.ClientStream
+}
+
+type brokerSubscribeClient struct {
+	grpc.ClientStream
+}
+
+func (x *brokerSubscribeClient) Recv() (*Message, error) {
+	m := new(Message)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 // BrokerServer is the server API for Broker service.
@@ -64,8 +86,7 @@ func (c *brokerClient) Subscribe(ctx context.Context, in *SubscribeRequest, opts
 // for forward compatibility
 type BrokerServer interface {
 	Publish(context.Context, *PublishRequest) (*emptypb.Empty, error)
-	// rpc Subscribe(SubscribeRequest) returns (stream Message);
-	Subscribe(context.Context, *SubscribeRequest) (*emptypb.Empty, error)
+	Subscribe(*SubscribeRequest, Broker_SubscribeServer) error
 	mustEmbedUnimplementedBrokerServer()
 }
 
@@ -76,8 +97,8 @@ type UnimplementedBrokerServer struct {
 func (UnimplementedBrokerServer) Publish(context.Context, *PublishRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Publish not implemented")
 }
-func (UnimplementedBrokerServer) Subscribe(context.Context, *SubscribeRequest) (*emptypb.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Subscribe not implemented")
+func (UnimplementedBrokerServer) Subscribe(*SubscribeRequest, Broker_SubscribeServer) error {
+	return status.Errorf(codes.Unimplemented, "method Subscribe not implemented")
 }
 func (UnimplementedBrokerServer) mustEmbedUnimplementedBrokerServer() {}
 
@@ -110,22 +131,25 @@ func _Broker_Publish_Handler(srv interface{}, ctx context.Context, dec func(inte
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Broker_Subscribe_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SubscribeRequest)
-	if err := dec(in); err != nil {
-		return nil, err
+func _Broker_Subscribe_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(SubscribeRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
 	}
-	if interceptor == nil {
-		return srv.(BrokerServer).Subscribe(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Broker_Subscribe_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(BrokerServer).Subscribe(ctx, req.(*SubscribeRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+	return srv.(BrokerServer).Subscribe(m, &brokerSubscribeServer{stream})
+}
+
+type Broker_SubscribeServer interface {
+	Send(*Message) error
+	grpc.ServerStream
+}
+
+type brokerSubscribeServer struct {
+	grpc.ServerStream
+}
+
+func (x *brokerSubscribeServer) Send(m *Message) error {
+	return x.ServerStream.SendMsg(m)
 }
 
 // Broker_ServiceDesc is the grpc.ServiceDesc for Broker service.
@@ -139,11 +163,13 @@ var Broker_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "Publish",
 			Handler:    _Broker_Publish_Handler,
 		},
+	},
+	Streams: []grpc.StreamDesc{
 		{
-			MethodName: "Subscribe",
-			Handler:    _Broker_Subscribe_Handler,
+			StreamName:    "Subscribe",
+			Handler:       _Broker_Subscribe_Handler,
+			ServerStreams: true,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
 	Metadata: "proto/broker.proto",
 }

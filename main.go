@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	pb "github.com/tomasmota/go-grpc-broker/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -16,54 +16,84 @@ import (
 )
 
 type Consumer struct {
-    id uuid.UUID
-    start time.Time
+	start time.Time
+
+	stream   pb.Broker_SubscribeServer
+	finished chan<- bool
 }
 
 type Broker struct {
-    pb.UnimplementedBrokerServer
-    consumers map[string]Consumer
+	pb.UnimplementedBrokerServer
+
+	mu        sync.RWMutex
+	consumers map[string]Consumer
 }
 
 func (b *Broker) Publish(ctx context.Context, pr *pb.PublishRequest) (*emptypb.Empty, error) {
-    if (pr.Producer == nil) {
-        return nil, errors.New("Producer not set")
-    }
-    slog.Info("Publishing", "contents", pr.Data)
-    return &emptypb.Empty{}, nil
+	if pr.Producer == nil {
+		return nil, errors.New("producer not set")
+	}
+	slog.Info("Publishing", "contents", pr.Data)
+
+	b.mu.RLock()
+	for name, c := range b.consumers {
+		slog.Info("sending stuff to consumer", "name", name)
+        c.stream.Send(&pb.Message{
+            Data: pr.Data,
+        })
+	}
+	b.mu.RUnlock()
+
+	return &emptypb.Empty{}, nil
 }
 
-func (b *Broker) Subscribe(ctx context.Context, sr *pb.SubscribeRequest) (*emptypb.Empty, error) {
-    if (sr.Consumer == nil) {
-        return nil, errors.New("Consumer not set")
-    }
-    slog.Info("New subscriber", "name", sr.Consumer.Name)
-    _, exists := b.consumers[sr.Consumer.Name]
-    if exists {
-        return nil, fmt.Errorf("Consumer with the same name already exists", "name", sr.Consumer.Name) // somehow communicate a warning instead
-    }
+func (b *Broker) Subscribe(sr *pb.SubscribeRequest, ss pb.Broker_SubscribeServer) error {
+	if sr.Consumer == nil {
+		return errors.New("Consumer not set")
+	}
 
-    b.consumers[sr.Consumer.Name] = Consumer{id: uuid.New(), start: time.Now()}
-    slog.Info("New consumer added", "name", sr.Consumer.Name)
-    return &emptypb.Empty{}, nil
+	b.mu.Lock()
+	_, exists := b.consumers[sr.Consumer.Name]
+	if exists {
+		return fmt.Errorf("Consumer with the same name already exists. name=%s", sr.Consumer.Name) // somehow communicate a warning instead
+	}
+
+    finCh := make(chan bool)
+	b.consumers[sr.Consumer.Name] = Consumer{
+		start:    time.Now(),
+		stream:   ss,
+		finished: finCh,
+	}
+	b.mu.Unlock()
+
+	slog.Info("New consumer added", "name", sr.Consumer.Name)
+	for {
+		select {
+		case <-finCh:
+			slog.Info("Closing stream for subscriber", "name", sr.Consumer.Name)
+		case <-ss.Context().Done():
+			slog.Info("Subscriber has disconnected", "name", sr.Consumer.Name)
+			return nil
+		}
+	}
 }
 
 func main() {
-    slog.Info("Starting server")
+	slog.Info("Starting server")
 
-    listener, err := net.Listen("tcp", ":3030")
-    if err != nil {
-        slog.Error("Failed to create listener: %v", err)
-    }
+	listener, err := net.Listen("tcp", ":3030")
+	if err != nil {
+		slog.Error("Failed to create listener: %v", err)
+	}
 
-    grpcServer := grpc.NewServer()
-    reflection.Register(grpcServer)
+	grpcServer := grpc.NewServer()
+	reflection.Register(grpcServer)
 
-    pb.RegisterBrokerServer(grpcServer, &Broker{
-        consumers: make(map[string]Consumer),
-    })
-    err = grpcServer.Serve(listener)
-    if err != nil {
-        slog.Error("Grpc server error: %v", err)
-    }
+	pb.RegisterBrokerServer(grpcServer, &Broker{
+		consumers: make(map[string]Consumer),
+	})
+	err = grpcServer.Serve(listener)
+	if err != nil {
+		slog.Error("Grpc server error: %v", err)
+	}
 }

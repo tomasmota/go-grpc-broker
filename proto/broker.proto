@@ -29,6 +29,6 @@ message Message {
 
 service Broker {
     rpc Publish(PublishRequest) returns (google.protobuf.Empty);
-    // rpc Subscribe(SubscribeRequest) returns (stream Message);
-    rpc Subscribe(SubscribeRequest) returns (google.protobuf.Empty);
+    rpc Subscribe(SubscribeRequest) returns (stream Message);
+    // rpc Subscribe(SubscribeRequest) returns (google.protobuf.Empty);
 }
