@@ -12,7 +12,6 @@ import (
 	pb "github.com/tomasmota/go-grpc-broker/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
-	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type Consumer struct {
@@ -29,7 +28,7 @@ type Broker struct {
 	consumers map[string]Consumer
 }
 
-func (b *Broker) Publish(ctx context.Context, pr *pb.PublishRequest) (*emptypb.Empty, error) {
+func (b *Broker) Publish(ctx context.Context, pr *pb.PublishRequest) (*pb.Ack, error) {
 	if pr.Producer == nil {
 		return nil, errors.New("producer not set")
 	}
@@ -39,12 +38,12 @@ func (b *Broker) Publish(ctx context.Context, pr *pb.PublishRequest) (*emptypb.E
 	defer b.mu.RUnlock()
 	for name, c := range b.consumers {
 		slog.Info("sending stuff to consumer", "name", name)
-        c.stream.Send(&pb.Message{
-            Data: pr.Data,
-        })
+		c.stream.Send(&pb.Message{
+			Data: pr.Data,
+		})
 	}
 
-	return &emptypb.Empty{}, nil
+	return &pb.Ack{}, nil
 }
 
 func (b *Broker) Subscribe(sr *pb.SubscribeRequest, ss pb.Broker_SubscribeServer) error {
@@ -55,11 +54,11 @@ func (b *Broker) Subscribe(sr *pb.SubscribeRequest, ss pb.Broker_SubscribeServer
 	b.mu.Lock()
 	_, exists := b.consumers[sr.Consumer.Name]
 	if exists {
-	b.mu.Unlock()
+		b.mu.Unlock()
 		return fmt.Errorf("consumer with the same name already exists. name=%s", sr.Consumer.Name) // somehow communicate a warning instead
 	}
 
-    finCh := make(chan bool)
+	finCh := make(chan bool)
 	b.consumers[sr.Consumer.Name] = Consumer{
 		start:    time.Now(),
 		stream:   ss,
@@ -68,7 +67,7 @@ func (b *Broker) Subscribe(sr *pb.SubscribeRequest, ss pb.Broker_SubscribeServer
 	b.mu.Unlock()
 
 	slog.Info("New consumer added", "name", sr.Consumer.Name)
-	
+
 	go func() {
 		select {
 		case <-finCh:
@@ -77,7 +76,7 @@ func (b *Broker) Subscribe(sr *pb.SubscribeRequest, ss pb.Broker_SubscribeServer
 			slog.Info("Subscriber has disconnected", "name", sr.Consumer.Name)
 		}
 	}()
- // TODO: remove consumer 
+	// TODO: remove consumer
 
 	return nil
 }

@@ -11,7 +11,6 @@ import (
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
-	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -28,7 +27,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type BrokerClient interface {
-	Publish(ctx context.Context, in *PublishRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	Publish(ctx context.Context, in *PublishRequest, opts ...grpc.CallOption) (*Ack, error)
 	Subscribe(ctx context.Context, in *SubscribeRequest, opts ...grpc.CallOption) (Broker_SubscribeClient, error)
 }
 
@@ -40,8 +39,8 @@ func NewBrokerClient(cc grpc.ClientConnInterface) BrokerClient {
 	return &brokerClient{cc}
 }
 
-func (c *brokerClient) Publish(ctx context.Context, in *PublishRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
-	out := new(emptypb.Empty)
+func (c *brokerClient) Publish(ctx context.Context, in *PublishRequest, opts ...grpc.CallOption) (*Ack, error) {
+	out := new(Ack)
 	err := c.cc.Invoke(ctx, Broker_Publish_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -85,7 +84,7 @@ func (x *brokerSubscribeClient) Recv() (*Message, error) {
 // All implementations must embed UnimplementedBrokerServer
 // for forward compatibility
 type BrokerServer interface {
-	Publish(context.Context, *PublishRequest) (*emptypb.Empty, error)
+	Publish(context.Context, *PublishRequest) (*Ack, error)
 	Subscribe(*SubscribeRequest, Broker_SubscribeServer) error
 	mustEmbedUnimplementedBrokerServer()
 }
@@ -94,7 +93,7 @@ type BrokerServer interface {
 type UnimplementedBrokerServer struct {
 }
 
-func (UnimplementedBrokerServer) Publish(context.Context, *PublishRequest) (*emptypb.Empty, error) {
+func (UnimplementedBrokerServer) Publish(context.Context, *PublishRequest) (*Ack, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Publish not implemented")
 }
 func (UnimplementedBrokerServer) Subscribe(*SubscribeRequest, Broker_SubscribeServer) error {

@@ -3,8 +3,6 @@ package broker;
 
 option go_package = "github.com/tomasmota/go-grpc-broker/proto";
 
-import "google/protobuf/empty.proto";
-
 message Producer {
   string name = 1;
 }
@@ -26,9 +24,9 @@ message Message {
   bytes data = 1; 
 }
 
+message Ack {}
 
 service Broker {
-    rpc Publish(PublishRequest) returns (google.protobuf.Empty);
+    rpc Publish(PublishRequest) returns (Ack);
     rpc Subscribe(SubscribeRequest) returns (stream Message);
-    // rpc Subscribe(SubscribeRequest) returns (google.protobuf.Empty);
 }
