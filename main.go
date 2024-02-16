@@ -36,26 +36,27 @@ func (b *Broker) Publish(ctx context.Context, pr *pb.PublishRequest) (*emptypb.E
 	slog.Info("Publishing", "contents", pr.Data)
 
 	b.mu.RLock()
+	defer b.mu.RUnlock()
 	for name, c := range b.consumers {
 		slog.Info("sending stuff to consumer", "name", name)
         c.stream.Send(&pb.Message{
             Data: pr.Data,
         })
 	}
-	b.mu.RUnlock()
 
 	return &emptypb.Empty{}, nil
 }
 
 func (b *Broker) Subscribe(sr *pb.SubscribeRequest, ss pb.Broker_SubscribeServer) error {
 	if sr.Consumer == nil {
-		return errors.New("Consumer not set")
+		return errors.New("consumer not set")
 	}
 
 	b.mu.Lock()
 	_, exists := b.consumers[sr.Consumer.Name]
 	if exists {
-		return fmt.Errorf("Consumer with the same name already exists. name=%s", sr.Consumer.Name) // somehow communicate a warning instead
+	b.mu.Unlock()
+		return fmt.Errorf("consumer with the same name already exists. name=%s", sr.Consumer.Name) // somehow communicate a warning instead
 	}
 
     finCh := make(chan bool)
@@ -67,15 +68,18 @@ func (b *Broker) Subscribe(sr *pb.SubscribeRequest, ss pb.Broker_SubscribeServer
 	b.mu.Unlock()
 
 	slog.Info("New consumer added", "name", sr.Consumer.Name)
-	for {
+	
+	go func() {
 		select {
 		case <-finCh:
-			slog.Info("Closing stream for subscriber", "name", sr.Consumer.Name)
+			slog.Info("Finishing up consumer", "name", sr.Consumer.Name)
 		case <-ss.Context().Done():
 			slog.Info("Subscriber has disconnected", "name", sr.Consumer.Name)
-			return nil
 		}
-	}
+	}()
+ // TODO: remove consumer 
+
+	return nil
 }
 
 func main() {
