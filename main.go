@@ -76,7 +76,11 @@ func (b *Broker) Subscribe(sr *pb.SubscribeRequest, ss pb.Broker_SubscribeServer
 			slog.Info("Subscriber has disconnected", "name", sr.Consumer.Name)
 		}
 	}()
-	// TODO: remove consumer
+
+    b.mu.Lock()
+    defer b.mu.Unlock()
+	slog.Info("Removing consumer", "name", sr.Consumer.Name)
+    delete(b.consumers, sr.Consumer.Name)
 
 	return nil
 }

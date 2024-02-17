@@ -5,6 +5,7 @@ A Kafka inspired message broker, using grpc. Built from scratch to get a good un
 
 # TODO:
 - topics
+- add unsubscribe
 - persist messages
 - cursors
 - more error handling
