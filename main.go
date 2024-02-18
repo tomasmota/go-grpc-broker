@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -38,9 +39,12 @@ func (b *Broker) Publish(ctx context.Context, pr *pb.PublishRequest) (*pb.Ack, e
 	defer b.mu.RUnlock()
 	for name, c := range b.consumers {
 		slog.Info("sending stuff to consumer", "name", name)
-		c.stream.Send(&pb.Message{
+        err := c.stream.Send(&pb.Message{
 			Data: pr.Data,
 		})
+        if err != nil {
+            slog.Error("Error sending message to consumer", "name", name, "error", err)
+        }
 	}
 
 	return &pb.Ack{}, nil
@@ -75,12 +79,12 @@ func (b *Broker) Subscribe(sr *pb.SubscribeRequest, ss pb.Broker_SubscribeServer
 		case <-ss.Context().Done():
 			slog.Info("Subscriber has disconnected", "name", sr.Consumer.Name)
 		}
-	}()
 
-    b.mu.Lock()
-    defer b.mu.Unlock()
-	slog.Info("Removing consumer", "name", sr.Consumer.Name)
-    delete(b.consumers, sr.Consumer.Name)
+        b.mu.Lock()
+        defer b.mu.Unlock()
+        slog.Info("Removing consumer", "name", sr.Consumer.Name)
+        delete(b.consumers, sr.Consumer.Name)
+	}()
 
 	return nil
 }
@@ -91,6 +95,7 @@ func main() {
 	listener, err := net.Listen("tcp", ":3030")
 	if err != nil {
 		slog.Error("Failed to create listener: %v", err)
+        os.Exit(1)
 	}
 
 	grpcServer := grpc.NewServer()
@@ -99,8 +104,10 @@ func main() {
 	pb.RegisterBrokerServer(grpcServer, &Broker{
 		consumers: make(map[string]Consumer),
 	})
+
 	err = grpcServer.Serve(listener)
 	if err != nil {
 		slog.Error("Grpc server error: %v", err)
+        os.Exit(1)
 	}
 }
