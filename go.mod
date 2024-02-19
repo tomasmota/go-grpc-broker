@@ -3,7 +3,6 @@ module github.com/tomasmota/go-grpc-broker
 go 1.21
 
 require (
-	github.com/google/uuid v1.4.0
 	google.golang.org/grpc v1.61.0
 	google.golang.org/protobuf v1.32.0
 )
