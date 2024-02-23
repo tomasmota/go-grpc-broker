@@ -8,20 +8,26 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tomasmota/go-grpc-broker/consumer"
 	pb "github.com/tomasmota/go-grpc-broker/proto"
 )
 
+type Consumer struct {
+	Start time.Time
+
+	Stream   pb.Broker_SubscribeServer
+	Finished chan<- bool
+}
+
 type Broker struct {
 	mu        sync.RWMutex
-	consumers map[string]consumer.Consumer
+	consumers map[string]Consumer
 
 	pb.UnimplementedBrokerServer
 }
 
 func New() *Broker {
 	broker := &Broker{
-		consumers: make(map[string]consumer.Consumer),
+		consumers: make(map[string]Consumer),
 	}
 
 	return broker
@@ -36,12 +42,12 @@ func (b *Broker) Publish(ctx context.Context, pr *pb.PublishRequest) (*pb.Ack, e
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	for name, c := range b.consumers {
-		slog.Info("sending stuff to consumer", "name", name)
+		slog.Info("Sending stuff to consumer", "name", name)
 		err := c.Stream.Send(&pb.Message{
 			Data: pr.Data,
 		})
 		if err != nil {
-			slog.Error("Error sending message to consumer", "name", name, "error", err)
+			slog.Error("error sending message to consumer", "name", name, "error", err)
 		}
 	}
 
@@ -53,7 +59,9 @@ func (b *Broker) Subscribe(sr *pb.SubscribeRequest, ss pb.Broker_SubscribeServer
 		return errors.New("consumer not set")
 	}
 
+	slog.Info("New subscriber (before lock)", "name", sr.Consumer.Name)
 	b.mu.Lock()
+	slog.Info("New subscriber (after lock)", "name", sr.Consumer.Name)
 	_, exists := b.consumers[sr.Consumer.Name]
 	if exists {
 		b.mu.Unlock()
@@ -61,7 +69,7 @@ func (b *Broker) Subscribe(sr *pb.SubscribeRequest, ss pb.Broker_SubscribeServer
 	}
 
 	finCh := make(chan bool)
-	b.consumers[sr.Consumer.Name] = consumer.Consumer{
+	b.consumers[sr.Consumer.Name] = Consumer{
 		Start:    time.Now(),
 		Stream:   ss,
 		Finished: finCh,

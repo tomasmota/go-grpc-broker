@@ -15,7 +15,7 @@ import (
 )
 
 func main() {
-    listener, err := net.Listen("tcp", ":3030")
+	listener, err := net.Listen("tcp", ":3030")
 	if err != nil {
 		slog.Error("Failed to create listener: %v", err)
 		os.Exit(1)
@@ -27,8 +27,8 @@ func main() {
 	pb.RegisterBrokerServer(grpcServer, broker.New())
 
 	go func() {
-        sigChan := make(chan os.Signal, 1)
-        signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 		<-sigChan
 
 		slog.Info("Shutting down server...")
@@ -40,5 +40,5 @@ func main() {
 	if err := grpcServer.Serve(listener); err != nil {
 		slog.Error("Grpc server error: %v", err)
 		os.Exit(1)
-    }
+	}
 }
