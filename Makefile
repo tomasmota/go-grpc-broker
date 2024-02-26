@@ -14,3 +14,7 @@ proto:
 .PHONY: check
 check:
 	@grpcurl --plaintext -d '{"data": "YmxhYWE=", "producer": {"name": "prod"}}' localhost:3030 broker.Broker.Publish
+
+.PHONY: test
+test:
+	@go test ./...
