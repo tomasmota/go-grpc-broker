@@ -61,10 +61,12 @@ func TestPublishing(t *testing.T) {
 		Data: []byte("test data"),
 	}
 
-	done := make(chan error, 5)
+	const numSubscribers = 500
+
+	done := make(chan error, numSubscribers)
 	readyWg := sync.WaitGroup{}
-	readyWg.Add(5)
-	for i := 0; i < 5; i++ {
+	readyWg.Add(numSubscribers)
+	for i := 0; i < numSubscribers; i++ {
 		go func(i int) {
 			sr := &pb.SubscribeRequest{
 				Consumer: &pb.Consumer{
@@ -78,7 +80,10 @@ func TestPublishing(t *testing.T) {
 				return
 			}
 
-			// time.Sleep(time.Millisecond * 100)
+			// Make sure subscription has been registered in server
+			// TODO: check if there is a way to check that the 
+			// subscription has been registered
+			time.Sleep(time.Millisecond * 100)
 			readyWg.Done()
 
 			msg := &pb.Message{}
@@ -92,19 +97,17 @@ func TestPublishing(t *testing.T) {
 				done <- fmt.Errorf("data mismatch: expected %v, got %v", pr.Data, msg.Data)
 				return
 			}
-			t.Logf("consumer %d received message; done", i)
 			done <- nil
 		}(i)
 	}
 
 	// wait for all subscribers to be ready before publishing
 	readyWg.Wait()
+
 	_, err := c.Publish(ctx, pr)
 	require.NoError(t, err)
 
-	for i := 0; i < 5; i++ {
-		// t.Log("after wait")
-		fmt.Println("after wait")
+	for i := 0; i < numSubscribers; i++ {
 		select {
 		case err := <-done:
 			require.NoError(t, err)
@@ -112,20 +115,4 @@ func TestPublishing(t *testing.T) {
 			t.Fatal("test timed out")
 		}
 	}
-
 }
-
-// func runSubscriber(ctx context.Context, t *testing.T, c pb.BrokerClient, sr *pb.SubscribeRequest, done chan error) {
-// 	sc, err := c.Subscribe(ctx, sr)
-// 	if err != nil {
-// 		done <- err
-// 		return
-// 	}
-// 	msg := &pb.Message{}
-// 	err = sc.RecvMsg(msg)
-// 	if err != nil {
-// 		done <- err
-// 		return
-// 	}
-// 	done <- nil
-// }
