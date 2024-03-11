@@ -14,8 +14,7 @@ import (
 type Consumer struct {
 	Start time.Time
 
-	Stream   pb.Broker_SubscribeServer
-	Finished chan<- bool
+	Stream pb.Broker_SubscribeServer
 }
 
 type Broker struct {
@@ -68,22 +67,17 @@ func (b *Broker) Subscribe(sr *pb.SubscribeRequest, ss pb.Broker_SubscribeServer
 		return fmt.Errorf("consumer with the same name already exists. name=%s", sr.Consumer.Name) // somehow communicate a warning instead
 	}
 
-	finCh := make(chan bool)
 	b.consumers[sr.Consumer.Name] = Consumer{
-		Start:    time.Now(),
-		Stream:   ss,
-		Finished: finCh,
+		Start:  time.Now(),
+		Stream: ss,
 	}
 	b.mu.Unlock()
 
 	slog.Info("New consumer added", "name", sr.Consumer.Name)
 
-	select {
-	case <-finCh:
-		slog.Info("Finishing up consumer", "name", sr.Consumer.Name)
-	case <-ss.Context().Done():
-		slog.Info("Subscriber has disconnected", "name", sr.Consumer.Name)
-	}
+	// block until the client disconnects
+	<-ss.Context().Done()
+	slog.Info("Subscriber has disconnected", "name", sr.Consumer.Name)
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
