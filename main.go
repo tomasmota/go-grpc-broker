@@ -24,7 +24,8 @@ func main() {
 	grpcServer := grpc.NewServer()
 	reflection.Register(grpcServer)
 
-	pb.RegisterBrokerServer(grpcServer, broker.New())
+	broker := broker.New()
+	pb.RegisterBrokerServer(grpcServer, broker)
 
 	go func() {
 		sigChan := make(chan os.Signal, 1)
@@ -33,6 +34,7 @@ func main() {
 
 		slog.Info("Shutting down server...")
 
+		broker.Shutdown()
 		grpcServer.GracefulStop()
 	}()
 

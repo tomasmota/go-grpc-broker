@@ -22,14 +22,34 @@ type Broker struct {
 	consumers map[string]Consumer
 
 	pb.UnimplementedBrokerServer
+	finished chan struct{}
 }
 
 func New() *Broker {
 	broker := &Broker{
 		consumers: make(map[string]Consumer),
+		finished: make(chan struct{}),
 	}
 
 	return broker
+}
+
+func (b* Broker) Shutdown() {
+	close(b.finished)
+}
+
+func (b *Broker) broadcast(ctx context.Context, msg []byte) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	for name, c := range b.consumers {
+		slog.Info("Sending stuff to consumer", "name", name)
+		err := c.Stream.Send(&pb.Message{
+			Data: msg,
+		})
+		if err != nil {
+			slog.Error("error sending message to consumer", "name", name, "error", err)
+		}
+	}
 }
 
 func (b *Broker) Publish(ctx context.Context, pr *pb.PublishRequest) (*pb.Ack, error) {
@@ -37,18 +57,7 @@ func (b *Broker) Publish(ctx context.Context, pr *pb.PublishRequest) (*pb.Ack, e
 		return nil, errors.New("producer not set")
 	}
 	slog.Info("Publishing", "contents", pr.Data)
-
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	for name, c := range b.consumers {
-		slog.Info("Sending stuff to consumer", "name", name)
-		err := c.Stream.Send(&pb.Message{
-			Data: pr.Data,
-		})
-		if err != nil {
-			slog.Error("error sending message to consumer", "name", name, "error", err)
-		}
-	}
+	go b.broadcast(ctx, pr.Data)
 
 	return &pb.Ack{}, nil
 }
@@ -76,8 +85,12 @@ func (b *Broker) Subscribe(sr *pb.SubscribeRequest, ss pb.Broker_SubscribeServer
 	slog.Info("New consumer added", "name", sr.Consumer.Name)
 
 	// block until the client disconnects
-	<-ss.Context().Done()
-	slog.Info("Subscriber has disconnected", "name", sr.Consumer.Name)
+	select {
+	case <-ss.Context().Done():
+		slog.Info("Subscriber has disconnected", "name", sr.Consumer.Name)
+	case <-b.finished:
+		slog.Info("Server shutting down, disconnecting consumer", "name", sr.Consumer.Name)
+	}
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
