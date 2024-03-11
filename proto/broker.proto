@@ -13,11 +13,13 @@ message Consumer {
 
 message PublishRequest {
   optional Producer producer = 1; 
-  bytes data = 2;
+  string topic = 2;
+  bytes data = 3;
 }
 
 message SubscribeRequest {
   Consumer consumer = 1; 
+  string topic = 2;
 }
 
 message Message {

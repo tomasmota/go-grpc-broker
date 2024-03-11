@@ -18,8 +18,11 @@ type Consumer struct {
 }
 
 type Broker struct {
-	mu        sync.RWMutex
-	consumers map[string]Consumer
+	consumerMu sync.RWMutex
+	consumers  map[string]Consumer
+
+	topicMu sync.RWMutex
+	topics  map[string][]string // topic -> consumer name
 
 	pb.UnimplementedBrokerServer
 	finished chan struct{}
@@ -28,38 +31,44 @@ type Broker struct {
 func New() *Broker {
 	broker := &Broker{
 		consumers: make(map[string]Consumer),
-		finished: make(chan struct{}),
+		topics:    make(map[string][]string),
+		finished:  make(chan struct{}),
 	}
 
 	return broker
 }
 
-func (b* Broker) Shutdown() {
+func (b *Broker) Shutdown() {
 	close(b.finished)
-}
-
-func (b *Broker) broadcast(ctx context.Context, msg []byte) {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	for name, c := range b.consumers {
-		slog.Info("Sending stuff to consumer", "name", name)
-		err := c.Stream.Send(&pb.Message{
-			Data: msg,
-		})
-		if err != nil {
-			slog.Error("error sending message to consumer", "name", name, "error", err)
-		}
-	}
 }
 
 func (b *Broker) Publish(ctx context.Context, pr *pb.PublishRequest) (*pb.Ack, error) {
 	if pr.Producer == nil {
 		return nil, errors.New("producer not set")
 	}
-	slog.Info("Publishing", "contents", pr.Data)
-	go b.broadcast(ctx, pr.Data)
+	go b.broadcast(ctx, pr.Topic, pr.Data)
 
 	return &pb.Ack{}, nil
+}
+
+func (b *Broker) broadcast(ctx context.Context, topic string, msg []byte) {
+	slog.Info("Broadcasting message", "topic", topic)
+
+	b.topicMu.RLock()
+	defer b.topicMu.RUnlock()
+	consumers := b.topics[topic]
+
+	for _, c := range consumers {
+		slog.Info("Sending message to consumer", "name", c)
+		b.consumerMu.RLock()
+		defer b.consumerMu.RUnlock()
+		err := b.consumers[c].Stream.Send(&pb.Message{
+			Data: msg,
+		})
+		if err != nil {
+			slog.Error("error sending message to consumer", "name", c, "error", err)
+		}
+	}
 }
 
 func (b *Broker) Subscribe(sr *pb.SubscribeRequest, ss pb.Broker_SubscribeServer) error {
@@ -67,20 +76,17 @@ func (b *Broker) Subscribe(sr *pb.SubscribeRequest, ss pb.Broker_SubscribeServer
 		return errors.New("consumer not set")
 	}
 
-	slog.Info("New subscriber (before lock)", "name", sr.Consumer.Name)
-	b.mu.Lock()
-	slog.Info("New subscriber (after lock)", "name", sr.Consumer.Name)
+	b.consumerMu.Lock()
 	_, exists := b.consumers[sr.Consumer.Name]
-	if exists {
-		b.mu.Unlock()
-		return fmt.Errorf("consumer with the same name already exists. name=%s", sr.Consumer.Name) // somehow communicate a warning instead
+	if !exists {
+		b.consumers[sr.Consumer.Name] = Consumer{
+			Start:  time.Now(),
+			Stream: ss,
+		}
 	}
+	b.consumerMu.Unlock()
 
-	b.consumers[sr.Consumer.Name] = Consumer{
-		Start:  time.Now(),
-		Stream: ss,
-	}
-	b.mu.Unlock()
+	b.registerTopic(sr.Topic, sr.Consumer.Name)
 
 	slog.Info("New consumer added", "name", sr.Consumer.Name)
 
@@ -92,10 +98,26 @@ func (b *Broker) Subscribe(sr *pb.SubscribeRequest, ss pb.Broker_SubscribeServer
 		slog.Info("Server shutting down, disconnecting consumer", "name", sr.Consumer.Name)
 	}
 
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	slog.Info("Removing consumer", "name", sr.Consumer.Name)
-	delete(b.consumers, sr.Consumer.Name)
+	b.removeConsumer(sr.Consumer.Name)
 
 	return nil
+}
+
+func (b *Broker) removeConsumer(consumer string) {
+	slog.Info("Removing consumer", "name", consumer)
+	b.consumerMu.Lock()
+	delete(b.consumers, consumer)
+	b.consumerMu.Unlock()
+
+	b.topicMu.Lock()
+	delete(b.topics, consumer)
+	b.topicMu.Unlock()
+}
+
+
+func (b *Broker) registerTopic(topic string, consumer string) {
+	b.topicMu.Lock()
+	defer b.topicMu.Unlock()
+	fmt.Println("adding consumer to topic", topic, consumer)
+	b.topics[topic] = append(b.topics[topic], consumer)
 }

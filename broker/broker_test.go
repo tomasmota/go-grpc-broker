@@ -58,6 +58,7 @@ func TestPublishing(t *testing.T) {
 		Producer: &pb.Producer{
 			Name: "test producer",
 		},
+		Topic: "simple-test",
 		Data: []byte("test data"),
 	}
 
@@ -72,6 +73,7 @@ func TestPublishing(t *testing.T) {
 				Consumer: &pb.Consumer{
 					Name: fmt.Sprintf("test consumer %d", i),
 				},
+				Topic: "simple-test",
 			}
 
 			sc, err := c.Subscribe(ctx, sr)
